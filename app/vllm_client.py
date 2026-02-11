@@ -13,15 +13,17 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are a document OCR and layout analysis system. For the given document page image, output a JSON array of elements. Each element must have:
-- "type": one of "text", "image", "table", "stamp", "signature"
-- "bbox": [x1, y1, x2, y2] in normalized coordinates 0-1000 (width 1000, height 1000)
-- "text" or "content": recognized text or short description for images/stamps/signatures
+SYSTEM_PROMPT = """You are a document OCR and layout analysis system. For the given document page image, output a JSON object with two fields:
+1. "page_rotation_degrees": number — estimated tilt/rotation of the page in degrees (0 = upright, positive = clockwise). Use 0 if the page appears straight.
+2. "elements": array of elements. Each element must have:
+   - "type": one of "text", "image", "table", "stamp", "signature"
+   - "bbox": [x1, y1, x2, y2] in pixel coordinates of the image (same resolution as the image you see)
+   - "text" or "content": recognized text or short description for images/stamps/signatures
 
-Output ONLY valid JSON array, no markdown code block, no explanation. Example:
-[{"type":"text","bbox":[100,50,900,120],"text":"Document title"},{"type":"table","bbox":[80,200,920,500],"text":"| A | B |\\n|--|--|\\n| 1 | 2 |"}]"""
+Output ONLY valid JSON object, no markdown code block, no explanation. Example:
+{"page_rotation_degrees":0,"elements":[{"type":"text","bbox":[100,50,900,120],"text":"Document title"},{"type":"table","bbox":[80,200,920,500],"text":"| A | B |\\n|--|--|\\n| 1 | 2 |"}]}"""
 
-USER_PROMPT_TEMPLATE = "Analyze this document page and return the JSON array of elements (text, images, tables, stamps, signatures) with bbox in 0-1000 scale and text/content."
+USER_PROMPT_TEMPLATE = "Analyze this document page. Return a JSON object with 'page_rotation_degrees' (page tilt in degrees, 0 if upright) and 'elements' (array of text, images, tables, stamps, signatures with bbox in pixel coordinates and text/content)."
 
 
 def _call_vllm_chat(image_base64: str, page_num: int) -> str:
@@ -72,6 +74,22 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
     raw = getattr(choice.message, "content", None) or ""
     logger.info("vLLM: страница %s — ответ получен, длина %s символов", page_num, len(raw))
     return raw.strip()
+
+
+def _extract_json_string(raw: str) -> Optional[str]:
+    """Extract JSON object or array string from model output (markdown, prefix text, etc.)."""
+    raw = raw.strip()
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
+    if m:
+        return m.group(1).strip()
+    if raw.startswith("{") or raw.startswith("["):
+        return raw
+    start = raw.find("{")
+    if start == -1:
+        start = raw.find("[")
+    if start == -1:
+        return None
+    return raw[start:]
 
 
 def _extract_json_array_string(raw: str) -> Optional[str]:
@@ -196,22 +214,54 @@ def _parse_json_array(raw: str) -> List[Dict[str, Any]]:
         return []
 
 
-def run_ocr_page(image_png_bytes: bytes, page_num: int) -> List[Dict[str, Any]]:
+def _parse_page_response(raw: str) -> tuple[List[Dict[str, Any]], float]:
     """
-    Send one page image to vLLM, parse JSON array of elements.
-    Adds "page" to each element and normalizes bbox.
+    Parse model response: object {page_rotation_degrees, elements} or plain array.
+    Returns (elements, rotation_degrees).
+    """
+    raw = raw.strip()
+    if not raw:
+        return [], 0.0
+    extracted = _extract_json_string(raw)
+    if not extracted:
+        return _parse_json_array(raw), 0.0
+    normalized = extracted.replace(",]", "]").replace(",}", "}")
+    try:
+        data = json.loads(normalized)
+    except json.JSONDecodeError:
+        elements = _parse_json_array(raw)
+        return elements, 0.0
+    if isinstance(data, dict):
+        elements = data.get("elements")
+        rotation = float(data.get("page_rotation_degrees", 0) or 0)
+        if isinstance(elements, list):
+            if rotation != 0:
+                logger.info("vLLM: определён поворот страницы: %s градусов", rotation)
+            return elements, rotation
+        if elements is not None:
+            return [], rotation
+        return [], 0.0
+    if isinstance(data, list):
+        return data, 0.0
+    return [], 0.0
+
+
+def run_ocr_page(image_png_bytes: bytes, page_num: int) -> Dict[str, Any]:
+    """
+    Send one page image to vLLM, parse response (elements + optional page_rotation_degrees).
+    Returns {"elements": [...], "page_rotation_degrees": float}.
     """
     b64 = base64.b64encode(image_png_bytes).decode("ascii")
     logger.info("vLLM: страница %s — размер PNG %s байт, base64 %s символов", page_num, len(image_png_bytes), len(b64))
     raw = _call_vllm_chat(b64, page_num)
-    items = _parse_json_array(raw)
+    items, rotation = _parse_page_response(raw)
     if not items and raw.strip():
         logger.warning("vLLM: страница %s — не удалось распарсить JSON из ответа (%s символов)", page_num, len(raw))
     for el in items:
         el["page"] = page_num
         if "content" in el and "text" not in el:
             el["text"] = el["content"]
-    return items
+    return {"elements": items, "page_rotation_degrees": rotation}
 
 
 def run_ocr_all_pages(page_images: List[bytes]) -> List[Dict[str, Any]]:
@@ -219,6 +269,6 @@ def run_ocr_all_pages(page_images: List[bytes]) -> List[Dict[str, Any]]:
     all_elements: List[Dict[str, Any]] = []
     for i, img_bytes in enumerate(page_images):
         page_num = i + 1
-        elements = run_ocr_page(img_bytes, page_num)
-        all_elements.extend(elements)
+        result = run_ocr_page(img_bytes, page_num)
+        all_elements.extend(result["elements"])
     return all_elements

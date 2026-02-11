@@ -93,13 +93,16 @@ async def parse_pdf(file: UploadFile = File(...)):
         for i, img_bytes in enumerate(page_images):
             page_num = i + 1
             logger.info("parse: обработка страницы %s из %s...", page_num, num_pages)
-            elements = run_ocr_page(img_bytes, page_num)
+            result = run_ocr_page(img_bytes, page_num)
+            elements = result["elements"]
+            rotation_degrees = result.get("page_rotation_degrees", 0) or 0
             all_elements.extend(elements)
-            logger.info("parse: страница %s — распознано элементов: %s", page_num, len(elements))
+            logger.info("parse: страница %s — распознано элементов: %s, поворот: %s°", page_num, len(elements), rotation_degrees)
             pages_for_ui.append({
                 "page": page_num,
                 "image_base64": base64.b64encode(img_bytes).decode("ascii"),
                 "elements": elements,
+                "rotation_degrees": rotation_degrees,
             })
 
         logger.info("parse: формирование markdown...")

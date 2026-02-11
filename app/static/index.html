@@ -184,6 +184,7 @@
         max-width: 100%;
         margin: 16px;
         line-height: 0;
+        transform-origin: center center;
       }
       .page-wrapper img {
         display: block;
@@ -387,10 +388,14 @@
           const card = document.createElement("div");
           card.className = "page-card";
           const title = document.createElement("h4");
-          title.textContent = "Страница " + (p.page || 0);
+          const rot = Number(p.rotation_degrees) || 0;
+          title.textContent = "Страница " + (p.page || 0) + (rot !== 0 ? " (поворот: " + rot + "°, выровнено)" : "");
           card.appendChild(title);
           const wrapper = document.createElement("div");
           wrapper.className = "page-wrapper";
+          if (rot !== 0) {
+            wrapper.style.transform = "rotate(" + (-rot) + "deg)";
+          }
           const img = new Image();
           img.src = "data:image/png;base64," + (p.image_base64 || "");
           const canvas = document.createElement("canvas");
