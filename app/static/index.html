@@ -353,19 +353,24 @@
 
       function drawBboxes(canvas, imgEl, elements) {
         if (!elements || !elements.length) return;
-        const scale = 1000;
         const dw = imgEl.offsetWidth;
         const dh = imgEl.offsetHeight;
+        if (!dw || !dh) return;
+        const iw = imgEl.naturalWidth || dw;
+        const ih = imgEl.naturalHeight || dh;
         canvas.width = dw;
         canvas.height = dh;
         const ctx = canvas.getContext("2d");
+        const sx = dw / iw;
+        const sy = dh / ih;
         elements.forEach((el) => {
           const bbox = el.bbox;
           if (!Array.isArray(bbox) || bbox.length < 4) return;
-          var x1 = (bbox[0] / scale) * dw;
-          var y1 = (bbox[1] / scale) * dh;
-          var w = ((bbox[2] - bbox[0]) / scale) * dw;
-          var h = ((bbox[3] - bbox[1]) / scale) * dh;
+          // bbox от модели интерпретируем как пиксели исходного изображения
+          const x1 = bbox[0] * sx;
+          const y1 = bbox[1] * sy;
+          const w = (bbox[2] - bbox[0]) * sx;
+          const h = (bbox[3] - bbox[1]) * sy;
           const type = (el.type || "text").toLowerCase();
           const c = COLORS[type] || COLORS.text;
           ctx.strokeStyle = c.stroke;
