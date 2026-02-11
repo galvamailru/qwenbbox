@@ -74,25 +74,71 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
     return raw.strip()
 
 
+def _extract_json_array_string(raw: str) -> Optional[str]:
+    """Extract string that should be a JSON array from model output (markdown, prefix text, etc.)."""
+    raw = raw.strip()
+    # 1) Markdown code block ```json ... ``` or ``` ... ```
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
+    if m:
+        return m.group(1).strip()
+    # 2) Raw string is the array
+    if raw.startswith("["):
+        return raw
+    # 3) Find first '[' and then matching ']' by bracket count (skip "]" inside strings roughly)
+    start = raw.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    quote = None
+    for i in range(start, len(raw)):
+        c = raw[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            continue
+        if not in_string and c in ("'", '"'):
+            in_string = True
+            quote = c
+            continue
+        if in_string and c == quote:
+            in_string = False
+            continue
+        if in_string:
+            continue
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+    # 4) Fallback: from first '[' to last ']'
+    last = raw.rfind("]")
+    if last != -1 and last > start:
+        return raw[start : last + 1]
+    return None
+
+
 def _parse_json_array(raw: str) -> List[Dict[str, Any]]:
     """Extract JSON array from model output (may be wrapped in markdown or text)."""
     raw = raw.strip()
-    # Strip markdown code block
-    for pattern in (r"```(?:json)?\s*([\s\S]*?)\s*```", r"\[[\s\S]*\]"):
-        m = re.search(pattern, raw)
-        if m:
-            try:
-                s = m.group(1) if "```" in pattern else m.group(0)
-                return json.loads(s)
-            except json.JSONDecodeError:
-                pass
-    # Try full string
-    if raw.startswith("["):
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            pass
-    return []
+    if not raw:
+        return []
+    extracted = _extract_json_array_string(raw)
+    if extracted is None:
+        if raw:
+            logger.info("vLLM: фрагмент ответа (парсинг не удался): %.800s", raw)
+        return []
+    # Try parse; allow trailing comma in array (replace ",]") for robustness
+    normalized = extracted.replace(",]", "]").replace(",}", "}")
+    try:
+        return json.loads(normalized)
+    except json.JSONDecodeError as e:
+        logger.info("vLLM: фрагмент ответа (JSON error %s): %.800s", e, extracted)
+        return []
 
 
 def run_ocr_page(image_png_bytes: bytes, page_num: int) -> List[Dict[str, Any]]:
