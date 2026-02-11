@@ -44,16 +44,27 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
         {"type": "text", "text": USER_PROMPT_TEMPLATE},
     ]
 
-    logger.info("vLLM: отправка страницы %s в модель %s...", page_num, settings.vllm_model)
-    response = client.chat.completions.create(
-        model=settings.vllm_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": content},
-        ],
-        max_tokens=settings.vllm_max_tokens,
-        timeout=settings.vllm_timeout_seconds,
+    payload_size_kb = (len(image_base64) * 3 // 4) // 1024  # приблизительный размер PNG в КБ
+    logger.info(
+        "vLLM: отправка страницы %s в модель %s (размер изображения ~%s КБ, таймаут %s с)...",
+        page_num, settings.vllm_model, payload_size_kb, settings.vllm_timeout_seconds,
     )
+    try:
+        response = client.chat.completions.create(
+            model=settings.vllm_model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": content},
+            ],
+            max_tokens=settings.vllm_max_tokens,
+            timeout=settings.vllm_timeout_seconds,
+        )
+    except Exception as e:
+        logger.exception(
+            "vLLM: страница %s — ошибка запроса: %s: %s",
+            page_num, type(e).__name__, e,
+        )
+        raise
     choice = response.choices[0] if response.choices else None
     if not choice or not getattr(choice, "message", None):
         logger.warning("vLLM: страница %s — пустой ответ модели", page_num)
@@ -90,6 +101,7 @@ def run_ocr_page(image_png_bytes: bytes, page_num: int) -> List[Dict[str, Any]]:
     Adds "page" to each element and normalizes bbox.
     """
     b64 = base64.b64encode(image_png_bytes).decode("ascii")
+    logger.info("vLLM: страница %s — размер PNG %s байт, base64 %s символов", page_num, len(image_png_bytes), len(b64))
     raw = _call_vllm_chat(b64, page_num)
     items = _parse_json_array(raw)
     if not items and raw.strip():
