@@ -30,6 +30,32 @@ python -m vllm.entrypoints.openai.api_server \
 
 Для **Qwen3-VL-235B-A22B** используйте соответствующее имя модели и при необходимости tensor parallelism (несколько GPU).
 
+## Проверка работы сервера vLLM (Qwen)
+
+Ответ `{"detail":"Not Found"}` на запросы к `http://localhost:8000` или `http://localhost:8000/v1` по GET — нормален: это не страницы, а API. Проверять нужно так:
+
+1. **Health-check** (сервер жив и готов принимать запросы):
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   Ожидается ответ без ошибки (например `{"status":"ok"}` или пустое тело с кодом 200).
+
+2. **Список загруженных моделей** (модель действительно поднята):
+   ```bash
+   curl http://localhost:8000/v1/models
+   ```
+   В ответе должен быть объект с полем `data` и списком моделей; имя модели должно совпадать с `VLLM_MODEL` в `.env` приложения qwen-bbox-ocr.
+
+3. **Проверка vision (опционально)** — запрос chat completions с картинкой (тест того, что Qwen-VL принимает изображения):
+   ```bash
+   curl -X POST http://localhost:8000/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model":"<имя_модели_из_v1/models>","messages":[{"role":"user","content":[{"type":"text","text":"What is in this image?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}}]}],"max_tokens":50}'
+   ```
+   Подставьте реальное имя модели из вывода `curl http://localhost:8000/v1/models`.
+
+Если `curl http://localhost:8000/health` не отвечает или соединение отклонено — vLLM не запущен или слушает другой порт/хост. Если `/v1/models` возвращает пустой список — модель ещё не загрузилась (подождите или проверьте логи запуска vLLM).
+
 ## Запуск веб-приложения (Docker)
 
 1. Скопируйте переменные окружения и задайте URL vLLM:

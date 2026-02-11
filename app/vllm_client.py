@@ -4,10 +4,13 @@ Expects OpenAI-compatible API: POST /v1/chat/completions with image_url (base64)
 """
 import base64
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """You are a document OCR and layout analysis system. For the given document page image, output a JSON array of elements. Each element must have:
@@ -41,6 +44,7 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
         {"type": "text", "text": USER_PROMPT_TEMPLATE},
     ]
 
+    logger.info("vLLM: отправка страницы %s в модель %s...", page_num, settings.vllm_model)
     response = client.chat.completions.create(
         model=settings.vllm_model,
         messages=[
@@ -52,8 +56,10 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
     )
     choice = response.choices[0] if response.choices else None
     if not choice or not getattr(choice, "message", None):
+        logger.warning("vLLM: страница %s — пустой ответ модели", page_num)
         return "[]"
     raw = getattr(choice.message, "content", None) or ""
+    logger.info("vLLM: страница %s — ответ получен, длина %s символов", page_num, len(raw))
     return raw.strip()
 
 
@@ -86,6 +92,8 @@ def run_ocr_page(image_png_bytes: bytes, page_num: int) -> List[Dict[str, Any]]:
     b64 = base64.b64encode(image_png_bytes).decode("ascii")
     raw = _call_vllm_chat(b64, page_num)
     items = _parse_json_array(raw)
+    if not items and raw.strip():
+        logger.warning("vLLM: страница %s — не удалось распарсить JSON из ответа (%s символов)", page_num, len(raw))
     for el in items:
         el["page"] = page_num
         if "content" in el and "text" not in el:

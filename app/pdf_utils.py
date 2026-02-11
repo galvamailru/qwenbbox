@@ -1,6 +1,9 @@
 """Convert PDF to list of page images (PIL) for sending to vLLM."""
+import logging
 from pathlib import Path
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 try:
     from pdf2image import convert_from_path
@@ -18,6 +21,7 @@ def pdf_to_images(pdf_path: Path, dpi: int = 150) -> List[bytes]:
     Convert PDF to list of PNG images (bytes). Prefer pdf2image (poppler); fallback PyMuPDF.
     Returns list of PNG bytes, one per page.
     """
+    logger.info("pdf_to_images: конвертация %s (DPI=%s)...", pdf_path.name, dpi)
     if convert_from_path is not None:
         pil_images = convert_from_path(pdf_path, dpi=dpi, fmt="png")
         out: List[bytes] = []
@@ -27,6 +31,7 @@ def pdf_to_images(pdf_path: Path, dpi: int = 150) -> List[bytes]:
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             out.append(buf.getvalue())
+        logger.info("pdf_to_images: готово (pdf2image), страниц: %s", len(out))
         return out
 
     if fitz is not None:
@@ -45,6 +50,7 @@ def pdf_to_images(pdf_path: Path, dpi: int = 150) -> List[bytes]:
                 img.save(buf, format="PNG")
                 out.append(buf.getvalue())
         doc.close()
+        logger.info("pdf_to_images: готово (PyMuPDF), страниц: %s", len(out))
         return out
 
     raise RuntimeError("Install pdf2image (with poppler) or PyMuPDF to convert PDF to images.")
