@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     vllm_api_key: Optional[str] = None  # optional, vLLM often has no key
     vllm_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"  # model name as registered on vLLM
     vllm_timeout_seconds: float = 300.0
-    vllm_max_tokens: int = 8192
+    vllm_max_tokens: int = 2048
+
+    # Меньше DPI — меньше размер картинки и входных токенов, больше остаётся на ответ
+    pdf_dpi: int = 150
 
 
 @lru_cache

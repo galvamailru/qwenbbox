@@ -122,6 +122,57 @@ def _extract_json_array_string(raw: str) -> Optional[str]:
     return None
 
 
+def _repair_truncated_json_array(extracted: str) -> Optional[List[Dict[str, Any]]]:
+    """If the model response was cut by max_tokens, find last complete object and close the array."""
+    s = extracted.strip()
+    if not s.startswith("["):
+        return None
+    # Track depth: array [ and object {. Find last position where we have }, and depth is 1,0.
+    array_depth = 0
+    object_depth = 0
+    in_string = False
+    escape = False
+    quote = None
+    last_complete_end = -1
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if escape:
+            escape = False
+            i += 1
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == quote:
+                in_string = False
+            i += 1
+            continue
+        if c in ("'", '"'):
+            in_string = True
+            quote = c
+            i += 1
+            continue
+        if c == "[":
+            array_depth += 1
+        elif c == "]":
+            array_depth -= 1
+        elif c == "{":
+            object_depth += 1
+        elif c == "}":
+            object_depth -= 1
+            if array_depth == 1 and object_depth == 0:
+                last_complete_end = i
+        i += 1
+    if last_complete_end == -1:
+        return None
+    repaired = s[: last_complete_end + 1] + "\n]"
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        return None
+
+
 def _parse_json_array(raw: str) -> List[Dict[str, Any]]:
     """Extract JSON array from model output (may be wrapped in markdown or text)."""
     raw = raw.strip()
@@ -137,6 +188,10 @@ def _parse_json_array(raw: str) -> List[Dict[str, Any]]:
     try:
         return json.loads(normalized)
     except json.JSONDecodeError as e:
+        repaired = _repair_truncated_json_array(extracted)
+        if repaired is not None:
+            logger.info("vLLM: ответ обрезан по токенам, использовано %s полных элементов", len(repaired))
+            return repaired
         logger.info("vLLM: фрагмент ответа (JSON error %s): %.800s", e, extracted)
         return []
 

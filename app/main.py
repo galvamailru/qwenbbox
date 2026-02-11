@@ -75,8 +75,9 @@ async def parse_pdf(file: UploadFile = File(...)):
             tmp_path = Path(tmp.name)
         logger.info("parse: PDF сохранён во временный файл, размер %s байт", len(content))
 
-        logger.info("parse: конвертация PDF в изображения страниц...")
-        page_images = pdf_to_images(tmp_path)
+        settings = get_settings()
+        logger.info("parse: конвертация PDF в изображения страниц (DPI=%s)...", settings.pdf_dpi)
+        page_images = pdf_to_images(tmp_path, dpi=settings.pdf_dpi)
         if not page_images:
             logger.error("parse: в PDF нет страниц или конвертация не удалась")
             return JSONResponse(
