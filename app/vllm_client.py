@@ -214,10 +214,21 @@ def _parse_json_array(raw: str) -> List[Dict[str, Any]]:
         return []
 
 
+def _extract_rotation_from_raw(raw: str) -> float:
+    """Try to get page_rotation_degrees from raw string (e.g. truncated object)."""
+    m = re.search(r'"page_rotation_degrees"\s*:\s*(-?\d+(?:\.\d+)?)', raw)
+    if m:
+        try:
+            return float(m.group(1))
+        except (ValueError, TypeError):
+            pass
+    return 0.0
+
+
 def _parse_page_response(raw: str) -> tuple[List[Dict[str, Any]], float]:
     """
     Parse model response: object {page_rotation_degrees, elements} or plain array.
-    Returns (elements, rotation_degrees).
+    Returns (elements, rotation_degrees). Each page is sent alone — no previous pages in context.
     """
     raw = raw.strip()
     if not raw:
@@ -229,8 +240,8 @@ def _parse_page_response(raw: str) -> tuple[List[Dict[str, Any]], float]:
     try:
         data = json.loads(normalized)
     except json.JSONDecodeError:
-        elements = _parse_json_array(raw)
-        return elements, 0.0
+        elements, rotation = _parse_page_response_fallback(raw, extracted)
+        return elements, rotation
     if isinstance(data, dict):
         elements = data.get("elements")
         rotation = float(data.get("page_rotation_degrees", 0) or 0)
@@ -244,6 +255,32 @@ def _parse_page_response(raw: str) -> tuple[List[Dict[str, Any]], float]:
     if isinstance(data, list):
         return data, 0.0
     return [], 0.0
+
+
+def _parse_page_response_fallback(raw: str, extracted: str) -> tuple[List[Dict[str, Any]], float]:
+    """
+    When full object parse failed (e.g. truncated): try to get 'elements' array from raw.
+    """
+    rotation = _extract_rotation_from_raw(raw)
+    idx = extracted.find('"elements"')
+    if idx == -1:
+        idx = extracted.find("'elements'")
+    if idx == -1:
+        idx = extracted.find("elements")
+    if idx != -1:
+        arr_start = extracted.find("[", idx)
+        if arr_start != -1:
+            arr_str = extracted[arr_start:]
+            normalized = arr_str.replace(",]", "]").replace(",}", "}")
+            try:
+                return json.loads(normalized), rotation
+            except json.JSONDecodeError:
+                repaired = _repair_truncated_json_array(arr_str)
+                if repaired is not None:
+                    logger.info("vLLM: ответ обрезан (объект), использовано %s элементов из 'elements'", len(repaired))
+                    return repaired, rotation
+    elements = _parse_json_array(raw)
+    return elements, rotation
 
 
 def run_ocr_page(image_png_bytes: bytes, page_num: int) -> Dict[str, Any]:
