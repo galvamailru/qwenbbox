@@ -394,7 +394,8 @@
           const wrapper = document.createElement("div");
           wrapper.className = "page-wrapper";
           if (rot !== 0) {
-            wrapper.style.transform = "rotate(" + (-rot) + "deg)";
+            // Поворачиваем страницу в том же направлении, что и сообщает модель
+            wrapper.style.transform = "rotate(" + rot + "deg)";
           }
           const img = new Image();
           img.src = "data:image/png;base64," + (p.image_base64 || "");
