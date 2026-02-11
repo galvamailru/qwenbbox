@@ -13,17 +13,51 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are a document OCR and layout analysis system. For the given document page image, output a JSON object with two fields:
-1. "page_rotation_degrees": number — estimated tilt/rotation of the page in degrees (0 = upright, positive = clockwise). Use 0 if the page appears straight.
-2. "elements": array of elements. Each element must have:
-   - "type": one of "text", "image", "table", "stamp", "signature"
-   - "bbox": [x1, y1, x2, y2] in pixel coordinates of the image (same resolution as the image you see)
-   - "text" or "content": recognized text or short description for images/stamps/signatures
+SYSTEM_PROMPT = """You are a deterministic document OCR and layout analysis system.
 
-Output ONLY valid JSON object, no markdown code block, no explanation. Example:
-{"page_rotation_degrees":0,"elements":[{"type":"text","bbox":[100,50,900,120],"text":"Document title"},{"type":"table","bbox":[80,200,920,500],"text":"| A | B |\\n|--|--|\\n| 1 | 2 |"}]}"""
+For the given SINGLE document page image, you MUST output ONE JSON object with EXACTLY the following shape:
+{
+  "page_rotation_degrees": <number>,
+  "elements": [
+    {
+      "type": "<string: text|image|table|stamp|signature>",
+      "bbox": [x1, y1, x2, y2],
+      "text": "<string, may be empty>"
+    },
+    ...
+  ]
+}
 
-USER_PROMPT_TEMPLATE = "Analyze this document page. Return a JSON object with 'page_rotation_degrees' (page tilt in degrees, 0 if upright) and 'elements' (array of text, images, tables, stamps, signatures with bbox in pixel coordinates and text/content)."
+Requirements:
+- ALWAYS include "page_rotation_degrees" as a number (can be integer or float). This is the estimated tilt / rotation of the whole page in DEGREES:
+  - 0  = page looks horizontal and upright
+  - >0 = rotated CLOCKWISE (even small deskew like 1–5 degrees must be reflected)
+  - <0 = rotated COUNTER-CLOCKWISE
+- ALWAYS include "elements" as an array (may be empty if nothing is found).
+- Each element in "elements":
+  - "type": one of "text", "image", "table", "stamp", "signature" (lowercase).
+  - "bbox": [x1, y1, x2, y2] — pixel coordinates in the SAME coordinate system as the input image (origin at top-left, x to the right, y down).
+  - "text": recognized text for text/table/signature, or a SHORT description / label for images, stamps.
+- Do NOT include any other top-level fields.
+- Do NOT wrap the result in markdown or comments.
+- Do NOT output any explanations, natural language, or additional text. ONLY the JSON object.
+
+Example of a VALID response:
+{
+  "page_rotation_degrees": 2.5,
+  "elements": [
+    {"type": "text", "bbox": [100, 50, 900, 120], "text": "Document title"},
+    {"type": "table", "bbox": [80, 200, 920, 500], "text": "| A | B |\\n|--|--|\\n| 1 | 2 |"}
+  ]
+}"""
+
+USER_PROMPT_TEMPLATE = (
+    "Analyze ONLY this single page image. "
+    "Return ONE JSON object with 'page_rotation_degrees' (page tilt in degrees, 0 if visually horizontal, "
+    "positive for clockwise tilt, negative for counter-clockwise, including small scan skew like 1–5 degrees) "
+    "and 'elements' (array of objects with type, bbox in PIXEL coordinates, and text). "
+    "Do not add any prose, comments or markdown — only the JSON."
+)
 
 
 def _call_vllm_chat(image_base64: str, page_num: int) -> str:
@@ -60,6 +94,8 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
             ],
             max_tokens=settings.vllm_max_tokens,
             timeout=settings.vllm_timeout_seconds,
+            temperature=0.0,
+            top_p=1.0,
         )
     except Exception as e:
         logger.exception(
