@@ -208,6 +208,13 @@
       }
       .legend span { display: inline-flex; align-items: center; gap: 6px; }
       .legend i { width: 14px; height: 14px; border: 2px solid; border-radius: 2px; }
+      .prompt-section { margin-top: 16px; }
+      .prompt-section summary { cursor: pointer; font-weight: 500; color: #475569; }
+      .prompt-section .prompt-fields { margin-top: 12px; }
+      .prompt-section label { display: block; font-size: 0.875rem; color: #64748b; margin-bottom: 4px; }
+      .prompt-section textarea { width: 100%; min-height: 100px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 0.8rem; resize: vertical; }
+      .prompt-section textarea:focus { outline: none; border-color: #2563eb; }
+      .prompt-section .btn-restore { margin-top: 8px; }
     </style>
   </head>
   <body>
@@ -219,6 +226,16 @@
         <div class="upload-zone" id="uploadZone">
           <input type="file" id="fileInput" accept=".pdf,application/pdf" />
           <p class="hint">Только PDF. Убедитесь, что сервер vLLM с моделью Qwen-VL запущен (см. .env).</p>
+          <details class="prompt-section" id="promptSection">
+            <summary>Изменить промпт (опционально)</summary>
+            <div class="prompt-fields">
+              <label for="systemPrompt">System prompt</label>
+              <textarea id="systemPrompt" placeholder="Пусто — используется промпт по умолчанию"></textarea>
+              <label for="userPrompt" style="margin-top: 12px;">User prompt</label>
+              <textarea id="userPrompt" placeholder="Пусто — используется промпт по умолчанию"></textarea>
+              <button type="button" class="btn-restore secondary" id="restorePromptsBtn">Восстановить по умолчанию</button>
+            </div>
+          </details>
           <div class="row" style="margin-top: 16px; justify-content: center;">
             <button id="processBtn">Распознать</button>
           </div>
@@ -282,6 +299,9 @@
       const structureTableBody = document.querySelector("#structureTable tbody");
       const structureMeta = document.getElementById("structureMeta");
       const metaEl = document.getElementById("meta");
+      const systemPromptEl = document.getElementById("systemPrompt");
+      const userPromptEl = document.getElementById("userPrompt");
+      const restorePromptsBtn = document.getElementById("restorePromptsBtn");
 
       const COLORS = {
         text:      { stroke: "#2563eb", fill: "rgba(37,99,235,0.12)" },
@@ -305,6 +325,18 @@
       }
 
       fileInput.addEventListener("change", () => setUploadState(!!fileInput.files.length));
+
+      restorePromptsBtn.addEventListener("click", async () => {
+        try {
+          const r = await fetch("/api/default-prompts");
+          if (!r.ok) throw new Error("Не удалось загрузить промпты");
+          const d = await r.json();
+          systemPromptEl.value = d.system_prompt || "";
+          userPromptEl.value = d.user_prompt || "";
+        } catch (e) {
+          errorBox.textContent = e?.message || String(e);
+        }
+      });
       uploadZone.addEventListener("dragover", (e) => { e.preventDefault(); uploadZone.classList.add("dragover"); });
       uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
       uploadZone.addEventListener("drop", (e) => {
@@ -419,6 +451,8 @@
 
         const formData = new FormData();
         formData.append("file", file);
+        if (systemPromptEl.value.trim()) formData.append("system_prompt", systemPromptEl.value.trim());
+        if (userPromptEl.value.trim()) formData.append("user_prompt", userPromptEl.value.trim());
 
         try {
           const response = await fetch("/parse", { method: "POST", body: formData });

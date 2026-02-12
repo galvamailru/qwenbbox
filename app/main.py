@@ -6,11 +6,11 @@ import base64
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -52,9 +52,20 @@ def index():
     )
 
 
+@app.get("/api/default-prompts")
+def get_default_prompts() -> Dict[str, str]:
+    """Вернуть промпты по умолчанию для подстановки в UI."""
+    from app.vllm_client import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+    return {"system_prompt": SYSTEM_PROMPT, "user_prompt": USER_PROMPT_TEMPLATE}
+
+
 @app.post("/parse")
-async def parse_pdf(file: UploadFile = File(...)):
-    """Загрузить PDF, конвертировать в изображения, отправить в vLLM по страницам; вернуть структуру + markdown + base64 страниц для отображения bbox."""
+async def parse_pdf(
+    file: UploadFile = File(...),
+    system_prompt: Optional[str] = Form(None),
+    user_prompt: Optional[str] = Form(None),
+):
+    """Загрузить PDF, конвертировать в изображения, отправить в vLLM по страницам; вернуть структуру + markdown + base64 страниц для отображения bbox. Опционально — кастомные system_prompt и user_prompt."""
     filename = file.filename or "unknown.pdf"
     logger.info("parse: начало обработки файла %s", filename)
 
@@ -93,7 +104,12 @@ async def parse_pdf(file: UploadFile = File(...)):
         for i, img_bytes in enumerate(page_images):
             page_num = i + 1
             logger.info("parse: обработка страницы %s из %s...", page_num, num_pages)
-            result = run_ocr_page(img_bytes, page_num)
+            result = run_ocr_page(
+                img_bytes,
+                page_num,
+                system_prompt=(system_prompt or "").strip() or None,
+                user_prompt=(user_prompt or "").strip() or None,
+            )
             elements = result["elements"]
             rotation_degrees = result.get("page_rotation_degrees", 0) or 0
             all_elements.extend(elements)

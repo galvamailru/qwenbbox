@@ -75,7 +75,12 @@ USER_PROMPT_TEMPLATE = (
 )
 
 
-def _call_vllm_chat(image_base64: str, page_num: int) -> str:
+def _call_vllm_chat(
+    image_base64: str,
+    page_num: int,
+    system_prompt: Optional[str] = None,
+    user_prompt: Optional[str] = None,
+) -> str:
     settings = get_settings()
     try:
         from openai import OpenAI
@@ -87,12 +92,15 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
         api_key=settings.vllm_api_key or "dummy",
     )
 
+    sys_content = (system_prompt or "").strip() or SYSTEM_PROMPT
+    usr_content = (user_prompt or "").strip() or USER_PROMPT_TEMPLATE
+
     content: List[Dict[str, Any]] = [
         {
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{image_base64}"},
         },
-        {"type": "text", "text": USER_PROMPT_TEMPLATE},
+        {"type": "text", "text": usr_content},
     ]
 
     payload_size_kb = (len(image_base64) * 3 // 4) // 1024  # приблизительный размер PNG в КБ
@@ -104,7 +112,7 @@ def _call_vllm_chat(image_base64: str, page_num: int) -> str:
         response = client.chat.completions.create(
             model=settings.vllm_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": sys_content},
                 {"role": "user", "content": content},
             ],
             max_tokens=settings.vllm_max_tokens,
@@ -334,14 +342,20 @@ def _parse_page_response_fallback(raw: str, extracted: str) -> tuple[List[Dict[s
     return elements, rotation
 
 
-def run_ocr_page(image_png_bytes: bytes, page_num: int) -> Dict[str, Any]:
+def run_ocr_page(
+    image_png_bytes: bytes,
+    page_num: int,
+    system_prompt: Optional[str] = None,
+    user_prompt: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Send one page image to vLLM, parse response (elements + optional page_rotation_degrees).
     Returns {"elements": [...], "page_rotation_degrees": float}.
+    Optional system_prompt / user_prompt override defaults.
     """
     b64 = base64.b64encode(image_png_bytes).decode("ascii")
     logger.info("vLLM: страница %s — размер PNG %s байт, base64 %s символов", page_num, len(image_png_bytes), len(b64))
-    raw = _call_vllm_chat(b64, page_num)
+    raw = _call_vllm_chat(b64, page_num, system_prompt=system_prompt, user_prompt=user_prompt)
     items, rotation = _parse_page_response(raw)
     if not items and raw.strip():
         logger.warning("vLLM: страница %s — не удалось распарсить JSON из ответа (%s символов)", page_num, len(raw))
