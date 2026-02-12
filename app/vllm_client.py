@@ -22,7 +22,7 @@ For the given SINGLE document page image, you MUST output ONE JSON object with E
     {
       "type": "<string: text|image|table|stamp|signature>",
       "bbox": [x1, y1, x2, y2],
-      "text": "<string, may be empty>"
+      "text": "<string, may be empty. For type='stamp' ALWAYS include the text inside the stamp as fully as possible, not just a generic label.>"
     },
     ...
   ]
@@ -37,7 +37,7 @@ Requirements:
 - Each element in "elements":
   - "type": one of "text", "image", "table", "stamp", "signature" (lowercase).
   - "bbox": [x1, y1, x2, y2] — pixel coordinates in the SAME coordinate system as the input image (origin at top-left, x to the right, y down).
-  - "text": recognized text for text/table/signature, or a SHORT description / label for images, stamps.
+  - "text": recognized text for text/table/signature, or a SHORT description / label for images, stamps. For elements with type="stamp", you MUST extract and return the full readable text that is inside the stamp (if any text is visible). Do not replace it with just a generic label; include all legible words from inside the stamp.
 - Do NOT include any other top-level fields.
 - Do NOT wrap the result in markdown or comments.
 - Do NOT output any explanations, natural language, or additional text. ONLY the JSON object.

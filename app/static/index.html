@@ -251,11 +251,11 @@
           </div>
           <div id="structurePanel" class="panel" data-tab="structure">
             <table class="structure" id="structureTable">
-              <thead>
+            <thead>
                 <tr>
                   <th>Страница</th>
                   <th>Тип</th>
-                  <th>BBox (0–1000)</th>
+                  <th>BBox (пиксели)</th>
                   <th>Текст (фрагмент)</th>
                 </tr>
               </thead>
@@ -363,51 +363,19 @@
         canvas.height = dh;
         const ctx = canvas.getContext("2d");
 
-        // Автоопределение по диапазону значений:
-        // - [0, 1]      → нормализованные долями (norm1)
-        // - (1, 1000]   → нормализованные в сетке 0–1000 (norm1000, как у Qwen)
-        // - > 1000      → пиксели исходного изображения
-        var maxVal = 0;
-        var minVal = Infinity;
-        elements.forEach(function(el) {
-          var b = el.bbox;
-          if (!Array.isArray(b) || b.length < 4) return;
-          for (var i = 0; i < 4; i++) {
-            var v = Number(b[i]) || 0;
-            maxVal = Math.max(maxVal, v);
-            minVal = Math.min(minVal, v);
-          }
-        });
+        // Координаты bbox приходят в ПИКСЕЛЯХ исходного изображения.
+        // Просто масштабируем их к отображаемому размеру страницы.
+        const sx = dw / iw;
+        const sy = dh / ih;
 
-        var coordMode = "pixel";
-        if (maxVal <= 1 && minVal >= 0) {
-          coordMode = "norm1";
-        } else if (maxVal <= 1000 && minVal >= 0) {
-          coordMode = "norm1000";
-        }
-
-        var sx = dw / iw;
-        var sy = dh / ih;
         elements.forEach(function(el) {
           const bbox = el.bbox;
           if (!Array.isArray(bbox) || bbox.length < 4) return;
-          var x1, y1, w, h;
-          if (coordMode === "norm1000") {
-            x1 = (bbox[0] / 1000) * dw;
-            y1 = (bbox[1] / 1000) * dh;
-            w = ((bbox[2] - bbox[0]) / 1000) * dw;
-            h = ((bbox[3] - bbox[1]) / 1000) * dh;
-          } else if (coordMode === "norm1") {
-            x1 = bbox[0] * dw;
-            y1 = bbox[1] * dh;
-            w = (bbox[2] - bbox[0]) * dw;
-            h = (bbox[3] - bbox[1]) * dh;
-          } else {
-            x1 = bbox[0] * sx;
-            y1 = bbox[1] * sy;
-            w = (bbox[2] - bbox[0]) * sx;
-            h = (bbox[3] - bbox[1]) * sy;
-          }
+          const x1 = bbox[0] * sx;
+          const y1 = bbox[1] * sy;
+          const w = (bbox[2] - bbox[0]) * sx;
+          const h = (bbox[3] - bbox[1]) * sy;
+
           const type = (el.type || "text").toLowerCase();
           const c = COLORS[type] || COLORS.text;
           ctx.strokeStyle = c.stroke;
