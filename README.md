@@ -1,34 +1,51 @@
 # Qwen Bbox OCR
 
-Веб-приложение для распознавания PDF через **vLLM** с моделью **Qwen3-VL** (или Qwen2.5-VL): загрузка PDF → конвертация в изображения → OCR по страницам → JSON-структура документа и Markdown. В интерфейсе отображаются страницы с **bbox-разметкой** (текст, таблицы, изображения, печати, подписи).
+Веб-приложение для распознавания PDF через **vLLM** с vision-моделью (Qwen-VL, Ministral-3 и др.): загрузка PDF → конвертация в изображения → OCR по страницам → JSON-структура документа и Markdown. В интерфейсе отображаются страницы с **bbox-разметкой** (текст, таблицы, изображения, печати, подписи).
 
 ## Требования
 
-- **Сервер**: Ubuntu 24.04, CUDA, Tesla A10 24 ГБ (или другой GPU с достаточным объёмом VRAM для Qwen-VL).
-- **vLLM** с моделью Qwen-VL запускается **отдельно** (не в этом репозитории). Это приложение — только клиент: принимает PDF, конвертирует в картинки и дергает API vLLM.
+- **Сервер**: Ubuntu 24.04, CUDA, GPU с достаточным VRAM (например 24 ГБ для Qwen2.5-VL-7B или [Ministral-3-14B](https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512)).
+- **vLLM** с vision-моделью запускается **отдельно**. Это приложение — клиент: принимает PDF, конвертирует в картинки и вызывает OpenAI-совместимый API vLLM.
 
 ## Архитектура
 
-1. **Сервер vLLM** — поднимается отдельно на том же хосте или в сети. На нём развёрнута модель, например `Qwen/Qwen3-VL-235B-A22B` (или `Qwen/Qwen2.5-VL-7B-Instruct` для тестов).
-2. **Сервис qwen-bbox-ocr** (этот проект) — FastAPI: загрузка PDF, конвертация в PNG по страницам, запросы к vLLM, возврат JSON + Markdown + base64 изображений страниц для отображения bbox в браузере.
+1. **Сервер vLLM** — поднимается отдельно на том же хосте или в сети. На нём развёрнута любая vision-модель с OpenAI-совместимым API (Qwen2.5-VL, Qwen3-VL, Ministral-3-14B и т.д.).
+2. **Сервис qwen-bbox-ocr** — FastAPI: загрузка PDF, конвертация в PNG по страницам, запросы к vLLM, возврат JSON + Markdown + base64 изображений страниц для отображения bbox в браузере.
 
-Подключение к vLLM задаётся через **переменные окружения** (файл `.env`).
+Подключение к vLLM задаётся через **переменные окружения** (файл `.env`). Модель выбирается переменной **`VLLM_MODEL`**.
 
-## Запуск vLLM отдельно (пример)
+## Запуск vLLM отдельно (примеры)
 
-На сервере с GPU:
+На сервере с GPU (vLLM >= 0.12.0 для Ministral):
+
+### Qwen2.5-VL-7B
 
 ```bash
-# Пример для Qwen2.5-VL (меньше модель для проверки)
 pip install vllm
-python -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen2.5-VL-7B-Instruct \
+vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
   --served-model-name Qwen/Qwen2.5-VL-7B-Instruct \
-  --host 0.0.0.0 \
-  --port 8000
+  --host 0.0.0.0 --port 8000
 ```
 
-Для **Qwen3-VL-235B-A22B** используйте соответствующее имя модели и при необходимости tensor parallelism (несколько GPU).
+Для **Qwen3-VL-235B-A22B** укажите соответствующую модель и при необходимости tensor parallelism.
+
+### Ministral-3-14B-Instruct (Mistral, vision, 24GB VRAM)
+
+[Ministral-3-14B-Instruct-2512](https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512) — vision-модель, помещается в 24 ГБ VRAM в FP8. Рекомендуется temperature ниже 0.1 (в приложении уже 0).
+
+```bash
+pip install "vllm>=0.12.0"
+vllm serve mistralai/Ministral-3-14B-Instruct-2512 \
+  --tokenizer_mode mistral --config_format mistral --load_format mistral \
+  --host 0.0.0.0 --port 8000
+```
+
+В `.env` укажите:
+```env
+VLLM_MODEL=mistralai/Ministral-3-14B-Instruct-2512
+```
+
+Имя в `VLLM_MODEL` должно совпадать с тем, что возвращает `curl http://localhost:8000/v1/models`.
 
 ## Проверка работы сервера vLLM (Qwen)
 
@@ -85,7 +102,7 @@ python -m vllm.entrypoints.openai.api_server \
 | Переменная | Описание | Пример |
 |------------|----------|--------|
 | `VLLM_BASE_URL` | URL OpenAI-совместимого API vLLM | `http://localhost:8000/v1` |
-| `VLLM_MODEL` | Имя модели на vLLM | `Qwen/Qwen3-VL-235B-A22B` |
+| `VLLM_MODEL` | Имя модели на vLLM (Qwen-VL, Ministral-3-14B и др.) | `Qwen/Qwen2.5-VL-7B-Instruct` или `mistralai/Ministral-3-14B-Instruct-2512` |
 | `VLLM_API_KEY` | Опционально | — |
 | `VLLM_TIMEOUT_SECONDS` | Таймаут запроса (сек) | `300` |
 | `VLLM_MAX_TOKENS` | Макс. токенов ответа | `2048` |

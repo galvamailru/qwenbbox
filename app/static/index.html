@@ -362,16 +362,31 @@
         canvas.width = dw;
         canvas.height = dh;
         const ctx = canvas.getContext("2d");
-        const sx = dw / iw;
-        const sy = dh / ih;
-        elements.forEach((el) => {
+        var maxBboxVal = 0;
+        elements.forEach(function(el) {
+          var b = el.bbox;
+          if (Array.isArray(b) && b.length >= 4) {
+            for (var i = 0; i < 4; i++) maxBboxVal = Math.max(maxBboxVal, Math.abs(Number(b[i]) || 0));
+          }
+        });
+        var isNormalized = maxBboxVal > 0 && maxBboxVal <= 1000;
+        var sx = dw / iw;
+        var sy = dh / ih;
+        elements.forEach(function(el) {
           const bbox = el.bbox;
           if (!Array.isArray(bbox) || bbox.length < 4) return;
-          // bbox от модели интерпретируем как пиксели исходного изображения
-          const x1 = bbox[0] * sx;
-          const y1 = bbox[1] * sy;
-          const w = (bbox[2] - bbox[0]) * sx;
-          const h = (bbox[3] - bbox[1]) * sy;
+          var x1, y1, w, h;
+          if (isNormalized) {
+            x1 = (bbox[0] / 1000) * dw;
+            y1 = (bbox[1] / 1000) * dh;
+            w = ((bbox[2] - bbox[0]) / 1000) * dw;
+            h = ((bbox[3] - bbox[1]) / 1000) * dh;
+          } else {
+            x1 = bbox[0] * sx;
+            y1 = bbox[1] * sy;
+            w = (bbox[2] - bbox[0]) * sx;
+            h = (bbox[3] - bbox[1]) * sy;
+          }
           const type = (el.type || "text").toLowerCase();
           const c = COLORS[type] || COLORS.text;
           ctx.strokeStyle = c.stroke;
@@ -389,14 +404,10 @@
           card.className = "page-card";
           const title = document.createElement("h4");
           const rot = Number(p.rotation_degrees) || 0;
-          title.textContent = "Страница " + (p.page || 0) + (rot !== 0 ? " (поворот: " + rot + "°, выровнено)" : "");
+          title.textContent = "Страница " + (p.page || 0) + (rot !== 0 ? " (поворот: " + rot + "°)" : "");
           card.appendChild(title);
           const wrapper = document.createElement("div");
           wrapper.className = "page-wrapper";
-          if (rot !== 0) {
-            // Поворачиваем страницу в том же направлении, что и сообщает модель
-            wrapper.style.transform = "rotate(" + rot + "deg)";
-          }
           const img = new Image();
           img.src = "data:image/png;base64," + (p.image_base64 || "");
           const canvas = document.createElement("canvas");
