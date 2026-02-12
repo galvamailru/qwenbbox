@@ -188,9 +188,15 @@
       }
       .page-wrapper img {
         display: block;
-        width: 100%;
+        max-width: 100%;
         height: auto;
         vertical-align: middle;
+      }
+      .page-wrapper canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+        pointer-events: none;
       }
       .legend {
         display: flex;
@@ -249,7 +255,7 @@
                 <tr>
                   <th>Страница</th>
                   <th>Тип</th>
-                  <th>BBox (пиксели)</th>
+                  <th>BBox (0–1000)</th>
                   <th>Текст (фрагмент)</th>
                 </tr>
               </thead>
@@ -346,6 +352,34 @@
         b.addEventListener("click", () => showTab(b.dataset.tab));
       });
 
+      function drawBboxes(canvas, imgEl, elements) {
+        if (!elements || !elements.length) return;
+        const dw = imgEl.offsetWidth;
+        const dh = imgEl.offsetHeight;
+        if (!dw || !dh) return;
+        canvas.width = dw;
+        canvas.height = dh;
+        const ctx = canvas.getContext("2d");
+
+        // bbox в нормализованных координатах 0–1000 относительно ширины/высоты страницы
+        elements.forEach(function(el) {
+          const bbox = el.bbox;
+          if (!Array.isArray(bbox) || bbox.length < 4) return;
+          const x1 = (bbox[0] / 1000) * dw;
+          const y1 = (bbox[1] / 1000) * dh;
+          const w  = ((bbox[2] - bbox[0]) / 1000) * dw;
+          const h  = ((bbox[3] - bbox[1]) / 1000) * dh;
+
+          const type = (el.type || "text").toLowerCase();
+          const c = COLORS[type] || COLORS.text;
+          ctx.strokeStyle = c.stroke;
+          ctx.fillStyle = c.fill;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x1, y1, w, h);
+          ctx.fillRect(x1, y1, w, h);
+        });
+      }
+
       function renderPages(pages) {
         pageCards.innerHTML = "";
         (pages || []).forEach((p) => {
@@ -355,11 +389,15 @@
           const rot = Number(p.rotation_degrees) || 0;
           title.textContent = "Страница " + (p.page || 0) + (rot !== 0 ? " (поворот: " + rot + "°)" : "");
           card.appendChild(title);
-          const img = new Image();
-          img.src = "data:image/png;base64," + (p.image_base64 || "");
           const wrapper = document.createElement("div");
           wrapper.className = "page-wrapper";
+          const img = new Image();
+          img.src = "data:image/png;base64," + (p.image_base64 || "");
+          const canvas = document.createElement("canvas");
+          img.onload = () => drawBboxes(canvas, img, p.elements || []);
+          img.onresize = () => drawBboxes(canvas, img, p.elements || []);
           wrapper.appendChild(img);
+          wrapper.appendChild(canvas);
           card.appendChild(wrapper);
           pageCards.appendChild(card);
         });

@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Literal, Optional
 # Element types we expect from the model
 ElementType = Literal["text", "image", "table", "stamp", "signature"]
 
-# bbox: [x1, y1, x2, y2] in normalized 0-1000 (Qwen-VL scale) or pixels
-# We keep normalized in API response; frontend scales to image size for overlay
+# bbox: [x1, y1, x2, y2] in normalized 0-1000 (Qwen-VL scale)
+# Frontend всегда масштабирует эти координаты под фактический размер изображения
 
 
 def document_to_markdown(elements: List[Dict[str, Any]], page_separator: str = "\n\n---\n\n") -> str:

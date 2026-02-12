@@ -36,7 +36,10 @@ Requirements:
 - ALWAYS include "elements" as an array (may be empty if nothing is found).
 - Each element in "elements":
   - "type": one of "text", "image", "table", "stamp", "signature" (lowercase).
-  - "bbox": [x1, y1, x2, y2] — pixel coordinates in the SAME coordinate system as the input image (origin at top-left, x to the right, y down).
+  - "bbox": [x1, y1, x2, y2] — NORMALIZED coordinates in the SAME coordinate system as the input image, with origin at the top-left corner, x to the right, y down. The normalization is by page width/height so that:
+    - x1 = 0 and x2 = 1000 mean the very left and very right of the page
+    - y1 = 0 and y2 = 1000 mean the very top and very bottom of the page
+    All four numbers MUST be in the range [0, 1000].
   - "text": recognized text for text/table/signature, or a SHORT description / label for images, stamps. For elements with type="stamp", you MUST extract and return the full readable text that is inside the stamp (if any text is visible). Do not replace it with just a generic label; include all legible words from inside the stamp.
 - Do NOT include any other top-level fields.
 - Do NOT wrap the result in markdown or comments.
@@ -55,7 +58,7 @@ USER_PROMPT_TEMPLATE = (
     "Analyze ONLY this single page image. "
     "Return ONE JSON object with 'page_rotation_degrees' (page tilt in degrees, 0 if visually horizontal, "
     "positive for clockwise tilt, negative for counter-clockwise, including small scan skew like 1–5 degrees) "
-    "and 'elements' (array of objects with type, bbox in PIXEL coordinates, and text). "
+    "and 'elements' (array of objects with type, bbox in NORMALIZED coordinates from 0 to 1000 relative to page width/height, and text). "
     "Do not add any prose, comments or markdown — only the JSON."
 )
 
