@@ -363,8 +363,10 @@
         canvas.height = dh;
         const ctx = canvas.getContext("2d");
 
-        // Автоопределение: пиксели или нормализованные (0–1000 / 0–1) по размеру изображения
-        var allInPixelBounds = true;
+        // Автоопределение по диапазону значений:
+        // - [0, 1]      → нормализованные долями (norm1)
+        // - (1, 1000]   → нормализованные в сетке 0–1000 (norm1000, как у Qwen)
+        // - > 1000      → пиксели исходного изображения
         var maxVal = 0;
         var minVal = Infinity;
         elements.forEach(function(el) {
@@ -375,16 +377,13 @@
             maxVal = Math.max(maxVal, v);
             minVal = Math.min(minVal, v);
           }
-          var x2 = Number(b[2]) || 0, y3 = Number(b[3]) || 0;
-          if (x2 > iw * 1.15 || y3 > ih * 1.15 || Number(b[0]) < -iw * 0.1 || Number(b[1]) < -ih * 0.1)
-            allInPixelBounds = false;
         });
+
         var coordMode = "pixel";
-        if (!allInPixelBounds) {
-          if (maxVal <= 1000 && minVal >= 0)
-            coordMode = "norm1000";
-          else if (maxVal <= 1 && minVal >= 0)
-            coordMode = "norm1";
+        if (maxVal <= 1 && minVal >= 0) {
+          coordMode = "norm1";
+        } else if (maxVal <= 1000 && minVal >= 0) {
+          coordMode = "norm1000";
         }
 
         var sx = dw / iw;
