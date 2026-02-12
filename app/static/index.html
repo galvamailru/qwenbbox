@@ -362,25 +362,47 @@
         canvas.width = dw;
         canvas.height = dh;
         const ctx = canvas.getContext("2d");
-        var maxBboxVal = 0;
+
+        // Автоопределение: пиксели или нормализованные (0–1000 / 0–1) по размеру изображения
+        var allInPixelBounds = true;
+        var maxVal = 0;
+        var minVal = Infinity;
         elements.forEach(function(el) {
           var b = el.bbox;
-          if (Array.isArray(b) && b.length >= 4) {
-            for (var i = 0; i < 4; i++) maxBboxVal = Math.max(maxBboxVal, Math.abs(Number(b[i]) || 0));
+          if (!Array.isArray(b) || b.length < 4) return;
+          for (var i = 0; i < 4; i++) {
+            var v = Number(b[i]) || 0;
+            maxVal = Math.max(maxVal, v);
+            minVal = Math.min(minVal, v);
           }
+          var x2 = Number(b[2]) || 0, y3 = Number(b[3]) || 0;
+          if (x2 > iw * 1.15 || y3 > ih * 1.15 || Number(b[0]) < -iw * 0.1 || Number(b[1]) < -ih * 0.1)
+            allInPixelBounds = false;
         });
-        var isNormalized = maxBboxVal > 0 && maxBboxVal <= 1000;
+        var coordMode = "pixel";
+        if (!allInPixelBounds) {
+          if (maxVal <= 1000 && minVal >= 0)
+            coordMode = "norm1000";
+          else if (maxVal <= 1 && minVal >= 0)
+            coordMode = "norm1";
+        }
+
         var sx = dw / iw;
         var sy = dh / ih;
         elements.forEach(function(el) {
           const bbox = el.bbox;
           if (!Array.isArray(bbox) || bbox.length < 4) return;
           var x1, y1, w, h;
-          if (isNormalized) {
+          if (coordMode === "norm1000") {
             x1 = (bbox[0] / 1000) * dw;
             y1 = (bbox[1] / 1000) * dh;
             w = ((bbox[2] - bbox[0]) / 1000) * dw;
             h = ((bbox[3] - bbox[1]) / 1000) * dh;
+          } else if (coordMode === "norm1") {
+            x1 = bbox[0] * dw;
+            y1 = bbox[1] * dh;
+            w = (bbox[2] - bbox[0]) * dw;
+            h = (bbox[3] - bbox[1]) * dh;
           } else {
             x1 = bbox[0] * sx;
             y1 = bbox[1] * sy;
