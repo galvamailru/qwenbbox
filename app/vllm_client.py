@@ -36,11 +36,21 @@ Requirements:
 - ALWAYS include "elements" as an array (may be empty if nothing is found).
 - Each element in "elements":
   - "type": one of "text", "image", "table", "stamp", "signature" (lowercase).
-  - "bbox": [x1, y1, x2, y2] — NORMALIZED coordinates in the SAME coordinate system as the input image, with origin at the top-left corner, x to the right, y down. The normalization is by page width/height so that:
-    - x1 = 0 and x2 = 1000 mean the very left and very right of the page
-    - y1 = 0 and y2 = 1000 mean the very top and very bottom of the page
-    All four numbers MUST be in the range [0, 1000].
+  - "bbox": [x1, y1, x2, y2] — see "Bbox coordinate calculation" below. All four numbers MUST be in the range [0, 1000].
   - "text": recognized text for text/table/signature, or a SHORT description / label for images, stamps. For elements with type="stamp", you MUST extract and return the full readable text that is inside the stamp (if any text is visible). Do not replace it with just a generic label; include all legible words from inside the stamp.
+
+Bbox coordinate calculation (STRICT — follow exactly):
+- The input is ONE image: the document page as pixels. Use the ACTUAL width W and height H of this image (in pixels).
+- Coordinate system: origin (0,0) is the TOP-LEFT corner of the image. X increases to the RIGHT, Y increases DOWN.
+- For each detected region (text block, table, image, stamp, signature):
+  1. Determine the bounding rectangle in PIXEL coordinates: left_px, top_px, right_px, bottom_px (left < right, top < bottom).
+  2. Convert to normalized 0–1000 using the image dimensions:
+     x1 = round( (left_px   / W) * 1000 )
+     y1 = round( (top_px    / H) * 1000 )
+     x2 = round( (right_px  / W) * 1000 )
+     y2 = round( (bottom_px / H) * 1000 )
+  3. Clamp each value to [0, 1000]. Output bbox as [x1, y1, x2, y2].
+- The bbox must align with the visible content in the image: use the image you are given, not a resized or different view.
 - Do NOT include any other top-level fields.
 - Do NOT wrap the result in markdown or comments.
 - Do NOT output any explanations, natural language, or additional text. ONLY the JSON object.
@@ -58,7 +68,9 @@ USER_PROMPT_TEMPLATE = (
     "Analyze ONLY this single page image. "
     "Return ONE JSON object with 'page_rotation_degrees' (page tilt in degrees, 0 if visually horizontal, "
     "positive for clockwise tilt, negative for counter-clockwise, including small scan skew like 1–5 degrees) "
-    "and 'elements' (array of objects with type, bbox in NORMALIZED coordinates from 0 to 1000 relative to page width/height, and text). "
+    "and 'elements' (array of objects with type, bbox, and text). "
+    "For bbox: use the ACTUAL pixel dimensions of THIS image (width W, height H); for each region compute "
+    "x1 = (left_px/W)*1000, y1 = (top_px/H)*1000, x2 = (right_px/W)*1000, y2 = (bottom_px/H)*1000, then output [x1,y1,x2,y2] in [0,1000]. "
     "Do not add any prose, comments or markdown — only the JSON."
 )
 
