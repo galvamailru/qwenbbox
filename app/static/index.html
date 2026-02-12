@@ -188,7 +188,7 @@
       }
       .page-wrapper img {
         display: block;
-        max-width: 100%;
+        width: 100%;
         height: auto;
         vertical-align: middle;
       }
@@ -196,6 +196,8 @@
         position: absolute;
         left: 0;
         top: 0;
+        width: 100%;
+        height: auto;
         pointer-events: none;
       }
       .legend {
@@ -354,27 +356,21 @@
 
       function drawBboxes(canvas, imgEl, elements) {
         if (!elements || !elements.length) return;
-        const dw = imgEl.offsetWidth;
-        const dh = imgEl.offsetHeight;
-        if (!dw || !dh) return;
-        const iw = imgEl.naturalWidth || dw;
-        const ih = imgEl.naturalHeight || dh;
-        canvas.width = dw;
-        canvas.height = dh;
+        const iw = imgEl.naturalWidth;
+        const ih = imgEl.naturalHeight;
+        if (!iw || !ih) return;
+        // Рисуем в «нативных» пикселях изображения, а масштабирование делает CSS (width:100%)
+        canvas.width = iw;
+        canvas.height = ih;
         const ctx = canvas.getContext("2d");
-
-        // Координаты bbox приходят в ПИКСЕЛЯХ исходного изображения.
-        // Просто масштабируем их к отображаемому размеру страницы.
-        const sx = dw / iw;
-        const sy = dh / ih;
 
         elements.forEach(function(el) {
           const bbox = el.bbox;
           if (!Array.isArray(bbox) || bbox.length < 4) return;
-          const x1 = bbox[0] * sx;
-          const y1 = bbox[1] * sy;
-          const w = (bbox[2] - bbox[0]) * sx;
-          const h = (bbox[3] - bbox[1]) * sy;
+          const x1 = bbox[0];
+          const y1 = bbox[1];
+          const w = (bbox[2] - bbox[0]);
+          const h = (bbox[3] - bbox[1]);
 
           const type = (el.type || "text").toLowerCase();
           const c = COLORS[type] || COLORS.text;
