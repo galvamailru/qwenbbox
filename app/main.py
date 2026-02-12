@@ -5,6 +5,7 @@ Qwen bbox OCR — загрузка PDF, конвертация в изображ
 import base64
 import logging
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -18,6 +19,7 @@ from app.config import get_settings
 from app.document_schema import document_to_markdown
 from app.pdf_utils import pdf_to_images
 from app.vllm_client import run_ocr_page
+from PIL import Image, ImageDraw
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +52,49 @@ def index():
         headers={"Location": "/static/index.html"},
         content={},
     )
+
+
+def _draw_bboxes_on_image(img_bytes: bytes, elements: List[Dict[str, Any]]) -> bytes:
+    """Нарисовать bbox поверх PNG-страницы и вернуть новые байты PNG."""
+    if not img_bytes:
+        return img_bytes
+    try:
+        im = Image.open(BytesIO(img_bytes)).convert("RGBA")
+    except Exception:
+        logger.exception("parse: не удалось открыть страницу как изображение для рисования bbox")
+        return img_bytes
+
+    draw = ImageDraw.Draw(im, "RGBA")
+
+    # Цвета как во фронтенде
+    COLORS: Dict[str, tuple] = {
+        "text": (37, 99, 235, 200),       # #2563eb
+        "table": (22, 163, 74, 200),      # #16a34a
+        "image": (180, 83, 9, 200),       # #b45309
+        "stamp": (185, 28, 28, 200),      # #b91c1c
+        "signature": (107, 33, 168, 200), # #6b21a8
+    }
+
+    for el in elements or []:
+        bbox = el.get("bbox")
+        if not isinstance(bbox, list) or len(bbox) < 4:
+            continue
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
+            continue
+        if x2 <= x1 or y2 <= y1:
+            continue
+        t = str(el.get("type") or "text").lower()
+        color = COLORS.get(t, COLORS["text"])
+        # Полупрозрачная заливка + контур
+        fill = (color[0], color[1], color[2], 40)
+        outline = color
+        draw.rectangle([x1, y1, x2, y2], outline=outline, width=2, fill=fill)
+
+    out = BytesIO()
+    im.save(out, format="PNG")
+    return out.getvalue()
 
 
 @app.post("/parse")
@@ -98,9 +143,13 @@ async def parse_pdf(file: UploadFile = File(...)):
             rotation_degrees = result.get("page_rotation_degrees", 0) or 0
             all_elements.extend(elements)
             logger.info("parse: страница %s — распознано элементов: %s, поворот: %s°", page_num, len(elements), rotation_degrees)
+
+            # Рисуем bbox поверх изображения на бэкенде
+            img_with_boxes = _draw_bboxes_on_image(img_bytes, elements)
+
             pages_for_ui.append({
                 "page": page_num,
-                "image_base64": base64.b64encode(img_bytes).decode("ascii"),
+                "image_base64": base64.b64encode(img_with_boxes).decode("ascii"),
                 "elements": elements,
                 "rotation_degrees": rotation_degrees,
             })

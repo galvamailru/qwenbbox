@@ -192,14 +192,6 @@
         height: auto;
         vertical-align: middle;
       }
-      .page-wrapper canvas {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: auto;
-        pointer-events: none;
-      }
       .legend {
         display: flex;
         flex-wrap: wrap;
@@ -354,34 +346,6 @@
         b.addEventListener("click", () => showTab(b.dataset.tab));
       });
 
-      function drawBboxes(canvas, imgEl, elements) {
-        if (!elements || !elements.length) return;
-        const iw = imgEl.naturalWidth;
-        const ih = imgEl.naturalHeight;
-        if (!iw || !ih) return;
-        // Рисуем в «нативных» пикселях изображения, а масштабирование делает CSS (width:100%)
-        canvas.width = iw;
-        canvas.height = ih;
-        const ctx = canvas.getContext("2d");
-
-        elements.forEach(function(el) {
-          const bbox = el.bbox;
-          if (!Array.isArray(bbox) || bbox.length < 4) return;
-          const x1 = bbox[0];
-          const y1 = bbox[1];
-          const w = (bbox[2] - bbox[0]);
-          const h = (bbox[3] - bbox[1]);
-
-          const type = (el.type || "text").toLowerCase();
-          const c = COLORS[type] || COLORS.text;
-          ctx.strokeStyle = c.stroke;
-          ctx.fillStyle = c.fill;
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x1, y1, w, h);
-          ctx.fillRect(x1, y1, w, h);
-        });
-      }
-
       function renderPages(pages) {
         pageCards.innerHTML = "";
         (pages || []).forEach((p) => {
@@ -391,17 +355,11 @@
           const rot = Number(p.rotation_degrees) || 0;
           title.textContent = "Страница " + (p.page || 0) + (rot !== 0 ? " (поворот: " + rot + "°)" : "");
           card.appendChild(title);
-          const wrapper = document.createElement("div");
-          wrapper.className = "page-wrapper";
           const img = new Image();
           img.src = "data:image/png;base64," + (p.image_base64 || "");
-          const canvas = document.createElement("canvas");
-          img.onload = () => {
-            drawBboxes(canvas, img, p.elements || []);
-          };
-          img.onresize = () => drawBboxes(canvas, img, p.elements || []);
+          const wrapper = document.createElement("div");
+          wrapper.className = "page-wrapper";
           wrapper.appendChild(img);
-          wrapper.appendChild(canvas);
           card.appendChild(wrapper);
           pageCards.appendChild(card);
         });
